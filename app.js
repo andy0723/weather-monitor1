@@ -167,6 +167,7 @@ async function requestNotificationPermission() {
   updateNotificationButtonState();
 }
 
+// --- 修改發送通知的邏輯 ---
 function sendTestNotification() {
   if (!lastWeather) {
     setMessage('尚未取得天氣資料，請先點擊「重新取得天氣」。', 'warn');
@@ -182,25 +183,42 @@ function sendTestNotification() {
   const temp = main && Number.isFinite(main.temp) ? `${Math.round(main.temp)}°C` : '';
   const body = [temp, weatherItem.description].filter(Boolean).join(' · ');
   const iconCode = weatherItem.icon;
+  const iconUrl = iconCode ? `https://openweathermap.org/img/wn/${iconCode}@2x.png` : undefined;
 
-  new Notification('即時天氣通知', {
-    body: body || '天氣更新',
-    icon: iconCode ? `https://openweathermap.org/img/wn/${iconCode}@2x.png` : undefined,
-  });
+  // 使用 Service Worker 發送推播到系統通知欄
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.ready.then((registration) => {
+      registration.showNotification('即時天氣通知', {
+        body: body || '天氣更新',
+        icon: iconUrl,
+        vibrate: [200, 100, 200], // 手機端會觸發震動
+        badge: iconUrl // Android 狀態列的小圖示
+      });
+    });
+  } else {
+    // 如果不支援 Service Worker 的環境，退回原本的做法
+    new Notification('即時天氣通知', {
+      body: body || '天氣更新',
+      icon: iconUrl,
+    });
+  }
+}
+
+function refreshData() {
+  if (lastWeather && lastWeather.coord) {
+    fetchWeather({
+      lat: lastWeather.coord.lat,
+      lon: lastWeather.coord.lon,
+      label: lastLocationLabel,
+    });
+  } else {
+    attemptGeolocation();
+  }
 }
 
 function bindEvents() {
-  ui.refreshBtn.addEventListener('click', () => {
-    if (lastWeather && lastWeather.coord) {
-      fetchWeather({
-        lat: lastWeather.coord.lat,
-        lon: lastWeather.coord.lon,
-        label: lastLocationLabel,
-      });
-    } else {
-      attemptGeolocation();
-    }
-  });
+  // 2. 將手動點擊按鈕的事件綁定為剛剛新增的 refreshData
+  ui.refreshBtn.addEventListener('click', refreshData);
 
   ui.notifyBtn.addEventListener('click', requestNotificationPermission);
   ui.testNotifyBtn.addEventListener('click', sendTestNotification);
@@ -210,6 +228,16 @@ function init() {
   bindEvents();
   updateNotificationButtonState();
   attemptGeolocation();
+
+  // 註冊 Service Worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => console.log('Service Worker 註冊成功'))
+      .catch((err) => console.error('Service Worker 註冊失敗', err));
+  }
+
+  // 自動刷新計時器 (5分鐘)
+  setInterval(refreshData, 5 * 60 * 1000);
 }
 
 document.addEventListener('DOMContentLoaded', init);
