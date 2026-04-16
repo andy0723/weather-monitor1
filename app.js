@@ -237,7 +237,7 @@ function init() {
   }
 
   // 自動刷新計時器 (5分鐘)
-  setInterval(refreshData, 5 * 60 * 1000);
+  setInterval(refreshData, 1 * 60 * 1000);
 }
 
 document.addEventListener('DOMContentLoaded', init);
